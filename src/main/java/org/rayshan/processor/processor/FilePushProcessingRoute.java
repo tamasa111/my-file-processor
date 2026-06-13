@@ -17,8 +17,11 @@ public class FilePushProcessingRoute extends RouteBuilder {
     @Inject
     AppConfig config;
 
-    @ConfigProperty(name = "app.config.kafka.output-topic", defaultValue = "test-out-topic")
-    String outputTopic;
+//    @ConfigProperty(name = "app.config.kafka.output-topic", defaultValue = "test-out-topic")
+//    String outputTopic;
+//
+//    @ConfigProperty(name = "app.config.kafka.output-topic-prefix", defaultValue = "--")
+//    String outputTopicPrefix;
 
     @Inject
     WlFilterProcessor wlFilterProcessor;
@@ -142,7 +145,8 @@ public class FilePushProcessingRoute extends RouteBuilder {
 
                 // ----- Step 5: Hand off to Kafka (already implemented separately) -----
                 .setProperty("currentStage", constant("SEND_TO_KAFKA"))
-                .setProperty("outputTopic", constant(outputTopic))
+                .setProperty("outputTopic", constant(config.kafka().outputTopic()))
+                .setProperty("outputTopicPrefix", constant(config.kafka().outputTopicPrefix()))
                 .to("direct:send-to-kafka")
                 .setProperty("currentStage", constant("COMPLETE"))
                 .log("Full pipeline complete - ${exchangeProperty.fileName} "

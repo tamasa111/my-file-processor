@@ -10,6 +10,7 @@ public interface AppConfig {
     interface KafkaConfig {
         String offsetReset();
         String outputTopic();
+        String outputTopicPrefix();
     }
 
     interface S3Config {

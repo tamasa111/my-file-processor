@@ -20,6 +20,7 @@ public class KafkaMessageProcessor implements Processor {
     public void process(Exchange exchange) throws Exception {
         String fileName = exchange.getProperty("fileName", String.class);
         String outputTopic = exchange.getProperty("outputTopic", String.class);
+        String outputTopicPrefix = exchange.getProperty("outputTopicPrefix", String.class);
         String correlationId = exchange.getProperty("correlationId", String.class);
 
         log.info("Built Kafka message for file {}", fileName);
@@ -29,16 +30,22 @@ public class KafkaMessageProcessor implements Processor {
                 exchange.getProperty("customerInfo", CustomerInfo.class);
         log.info("KafkaMessageProcessor - Customer Info: {}", customerInfo);
 
-        Message msg1 = new Message();
-        msg1.setKey("filename");
-        msg1.setValue(fileName);
+        Message kafkaMessage = new Message();
+        kafkaMessage.setKey("filename");
+        kafkaMessage.setValue(fileName);
 
-        msg1.setCorrelationId(correlationId);
-        msg1.setCustomerId(customerInfo.getCustomerId());
-        msg1.setFileName(fileName);
+        kafkaMessage.setCorrelationId(correlationId);
+        kafkaMessage.setFileName(fileName);
+
+        if(customerInfo == null) {
+            log.error("Customer Info is null");
+        } else {
+            kafkaMessage.setCustomerId(customerInfo.getCustomerId());
+            exchange.setProperty("outputTopic", outputTopicPrefix + "." + customerInfo.getCustomerId());
+        }
 
         // Set JSON body and use filename as Kafka partition key
-        exchange.getIn().setBody(objectMapper.writeValueAsString(msg1));
+        exchange.getIn().setBody(objectMapper.writeValueAsString(kafkaMessage));
         exchange.getIn().setHeader("kafka.KEY", fileName);
     }
 
