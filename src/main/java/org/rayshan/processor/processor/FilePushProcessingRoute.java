@@ -10,7 +10,7 @@ import org.rayshan.processor.model.CustomerInfo;
 import org.rayshan.processor.model.FileInfo;
 import org.rayshan.processor.model.FileIngestedEvent;
 
-import org.eclipse.microprofile.config.inject.ConfigProperty;
+import java.io.InputStream;
 
 @ApplicationScoped
 public class FilePushProcessingRoute extends RouteBuilder {
@@ -25,6 +25,9 @@ public class FilePushProcessingRoute extends RouteBuilder {
 
     @Inject
     WlFilterProcessor wlFilterProcessor;
+
+    @Inject
+    CsvStreamFilterProcessor csvStreamFilterProcessor;
 
     @Inject
     KafkaMessageProcessor kafkaMessageProcessor;
@@ -111,12 +114,21 @@ public class FilePushProcessingRoute extends RouteBuilder {
                 .log("Read ingest file from s3://${header.CamelAwsS3BucketName}/${header.CamelAwsS3Key}")
 
                 // ----- Step 2: Apply transformation (stream -> stream) -----
-                .setProperty("currentStage", constant("TRANSFORMATION"))
-                .to("direct:apply-transformation")
+                //.setProperty("currentStage", constant("TRANSFORMATION"))
+                //.to("direct:apply-transformation")
 
-                // ----- Step 3: Apply WL filter (stream -> stream) -----
+                // ----- Step 3: Apply WL filter (line-by-line CSV streaming) -----
                 .setProperty("currentStage", constant("WL_FILTER"))
-                .to("direct:apply-wl-filter")
+                .process(exchange -> {
+                    FileIngestedEvent ingestedEvent =
+                            exchange.getProperty("ingestedEvent", FileIngestedEvent.class);
+                    FileInfo fileInfo = ingestedEvent.getFile();
+                    String delimiter = fileInfo.getDelimiter() != null ? fileInfo.getDelimiter() : ",";
+                    exchange.setProperty("csvDelimiter", delimiter);
+                })
+                .convertBodyTo(InputStream.class)
+                .process(csvStreamFilterProcessor)
+                .log("WL filter applied - ${exchangeProperty.fileName} - kept ${exchangeProperty.filteredCount} lines")
 
                 // ----- Step 4: Upload processed stream to S3 processed/ folder -----
                 .setProperty("currentStage", constant("UPLOAD_TO_S3"))
@@ -163,22 +175,6 @@ public class FilePushProcessingRoute extends RouteBuilder {
                 .log("Transformation applied - ${exchangeProperty.fileName}")
                 .otherwise()
                 .log("No transformation required - ${exchangeProperty.fileName}")
-                .end()
-        ;
-
-        // ============ WL FILTER (stream -> stream, stub) ============
-        from("direct:apply-wl-filter")
-                .routeId("apply-wl-filter-route")
-                .errorHandler(deadLetterChannel("log:wl-filter-dlq?level=ERROR")
-                        .maximumRedeliveries(0))
-                .log("Applying WL filter - ${exchangeProperty.fileName}")
-                .choice()
-                .when(simple("${exchangeProperty.customerInfo.wlFilter} == true"))
-                .process(wlFilterProcessor)
-                //.bean(WlFilterProcessor.class, "filter")
-                .log("WL filter applied - ${exchangeProperty.fileName}")
-                .otherwise()
-                .log("WL filter not enabled for customer - skipping - ${exchangeProperty.fileName}")
                 .end()
         ;
 
