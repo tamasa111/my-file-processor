@@ -185,7 +185,7 @@ public class FilePushProcessingRoute extends RouteBuilder {
                 .process(kafkaMessageProcessor)
                 .log("Send ing message to kafka.")
                 .toD("kafka:${exchangeProperty.outputTopic}?brokers={{camel.component.kafka.brokers}}&synchronous=true")
-                .log("kafka message published for file: ${exchangeProperty.fileName}");
+                .log("kafka message published in topic: ${exchangeProperty.outputTopic}, for file: ${exchangeProperty.fileName}");
 
     }
 }
