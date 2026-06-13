@@ -28,10 +28,9 @@ public class FilePushProcessingRoute extends RouteBuilder {
 
     @Override
     public void configure() throws Exception {
-        // Catch-all safety net
+        // Catch-all safety net - NO redelivery to avoid ClassNotFoundException on Kafka callback threads
         onException(Exception.class)
-                .maximumRedeliveries(1)
-                .redeliveryDelay(2000)
+                .maximumRedeliveries(0)
                 .handled(true)
                 .log(LoggingLevel.ERROR,
                         "Unexpected failure - ${exchangeProperty.fileName} "
@@ -70,6 +69,8 @@ public class FilePushProcessingRoute extends RouteBuilder {
         // ============ FULL PIPELINE ============
         from("direct:full-pipeline")
                 .routeId("full-pipeline-route")
+                .errorHandler(deadLetterChannel("log:full-pipeline-dlq?level=ERROR")
+                        .maximumRedeliveries(0))
                 // GUARANTEED cleanup - success or failure
                 .onCompletion()
                 .process(exchange -> {
@@ -164,6 +165,8 @@ public class FilePushProcessingRoute extends RouteBuilder {
         // ============ WL FILTER (stream -> stream, stub) ============
         from("direct:apply-wl-filter")
                 .routeId("apply-wl-filter-route")
+                .errorHandler(deadLetterChannel("log:wl-filter-dlq?level=ERROR")
+                        .maximumRedeliveries(0))
                 .log("Applying WL filter - ${exchangeProperty.fileName}")
                 .choice()
                 .when(simple("${exchangeProperty.customerInfo.wlFilter} == true"))
@@ -177,15 +180,12 @@ public class FilePushProcessingRoute extends RouteBuilder {
 
         from("direct:send-to-kafka")
                 .routeId("send-to-kafka-route")
+                .errorHandler(deadLetterChannel("log:kafka-dlq?level=ERROR")
+                        .maximumRedeliveries(0))
                 .process(kafkaMessageProcessor)
-                .setHeader("kafka.TOPIC", simple("${exchangeProperty.outputTopic}"))
                 .log("Send ing message to kafka.")
-                .to("kafka:${exchangeProperty.outputTopic}?brokers={{camel.component.kafka.brokers}}")
-                .onException(Exception.class)
-                    .handled(true)
-                    .log(LoggingLevel.ERROR, "Failed to send to Kafka - ${exception.message}")
-                    .end()
-                .log("kafka message published for file: ${headerexchangeProperty.fileName}");
+                .toD("kafka:${exchangeProperty.outputTopic}?brokers={{camel.component.kafka.brokers}}&synchronous=true")
+                .log("kafka message published for file: ${exchangeProperty.fileName}");
 
     }
 }
