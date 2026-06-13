@@ -42,9 +42,6 @@ public class CsvStreamFilterProcessor implements Processor {
             delimiter = ",";
         }
         final String finalDelimiter = delimiter;
-
-        String filterColumn = getFilterColumn(customerInfo);
-        final String finalFilterColumn = filterColumn;
         final CustomerInfo finalCustomerInfo = customerInfo;
         final Exchange finalExchange = exchange;
 
@@ -55,68 +52,63 @@ public class CsvStreamFilterProcessor implements Processor {
             return;
         }
 
-        final PipedOutputStream pipedOut = new PipedOutputStream();
-        final PipedInputStream pipedIn = new PipedInputStream(pipedOut);
+        // Use ByteArrayOutputStream to collect filtered content (provides known length for S3)
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 
-        Thread writerThread = new Thread(() -> {
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
-                 BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(pipedOut, StandardCharsets.UTF_8))) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8))) {
 
-                String headerLine = reader.readLine();
-                LOG.info("==> Header line read: {}", headerLine);
-                if (headerLine == null) {
-                    return;
+            String headerLine = reader.readLine();
+            if (headerLine == null) {
+                return;
+            }
+
+            String[] headerFields = headerLine.split(finalDelimiter, -1);
+            int[] indexesToCheck = getIndexesToCheck(finalCustomerInfo, headerFields);
+
+            writer.write(headerLine);
+            writer.newLine();
+
+            int keptCount = 0;
+            int skippedCount = 0;
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.trim().isEmpty()) {
+                    continue;
                 }
 
-                List<String> headers = Arrays.asList(headerLine.split(finalDelimiter, -1));
-                int columnIndex = headers.indexOf(finalFilterColumn);
-
-                writer.write(headerLine);
-                writer.newLine();
-
-                int keptCount = 0;
-                int skippedCount = 0;
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (line.trim().isEmpty()) {
-                        continue;
-                    }
-                    LOG.info("==> Body line read: {}", line);
-
-                    String[] fields = line.split(finalDelimiter, -1);
-                    if (columnIndex >= 0 && columnIndex < fields.length) {
-                        String fieldValue = fields[columnIndex].trim();
+                String[] fields = line.split(finalDelimiter, -1);
+                boolean shouldFilter = false;
+                for (int idx : indexesToCheck) {
+                    if (idx >= 0 && idx < fields.length) {
+                        String fieldValue = fields[idx].trim();
                         if (isInWhitelist(finalCustomerInfo, fieldValue)) {
-                            skippedCount++;
-                        } else {
-                            writer.write(line);
-                            writer.newLine();
-                            keptCount++;
+                            shouldFilter = true;
+                            break;
                         }
-                    } else {
-                        writer.write(line);
-                        writer.newLine();
-                        keptCount++;
                     }
                 }
 
-                finalExchange.setProperty("filteredCount", keptCount);
-                LOG.debug("Filtered {} lines, kept {} lines", skippedCount, keptCount);
-
-            } catch (IOException e) {
-                LOG.error("Error processing CSV stream", e);
-            } finally {
-                try {
-                    pipedOut.close();
-                } catch (IOException ignored) {
+                if (!shouldFilter) {
+                    writer.write(line);
+                    writer.newLine();
+                    keptCount++;
+                } else {
+                    skippedCount++;
                 }
             }
-        });
 
-        writerThread.start();
-        writerThread.join();
+            finalExchange.setProperty("filteredCount", keptCount);
+            LOG.debug("Filtered {} lines, kept {} lines", skippedCount, keptCount);
 
-        exchange.getIn().setBody(pipedIn);
+        } catch (IOException e) {
+            LOG.error("Error processing CSV stream", e);
+            throw e;
+        }
+
+        // Set byte array directly - Camel handles content-length correctly for byte[]
+        byte[] filteredBytes = outputStream.toByteArray();
+        exchange.getIn().setBody(filteredBytes);
     }
 
     private void ensureWhitelistLoaded(CustomerInfo customerInfo) {
@@ -137,6 +129,22 @@ public class CsvStreamFilterProcessor implements Processor {
             whitelistLoaded = true;
             LOG.info("Whitelist loaded with {} categories", whitelistCache.size());
         }
+    }
+
+    private int[] getIndexesToCheck(CustomerInfo customerInfo, String[] headerFields) {
+        if (customerInfo.getWlFilterConfig() != null
+                && customerInfo.getWlFilterConfig().getWlIndexes() != null
+                && customerInfo.getWlFilterConfig().getWlIndexes().length > 0) {
+            return customerInfo.getWlFilterConfig().getWlIndexes();
+        }
+        // Fallback: find column index by name from wlFilterConfig
+        String filterColumn = getFilterColumn(customerInfo);
+        List<String> headers = Arrays.asList(headerFields);
+        int columnIndex = headers.indexOf(filterColumn);
+        if (columnIndex >= 0) {
+            return new int[]{columnIndex};
+        }
+        return new int[0];
     }
 
     private String getFilterColumn(CustomerInfo customerInfo) {

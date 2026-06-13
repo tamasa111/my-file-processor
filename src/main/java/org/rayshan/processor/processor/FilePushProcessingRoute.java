@@ -30,6 +30,9 @@ public class FilePushProcessingRoute extends RouteBuilder {
     CsvStreamFilterProcessor csvStreamFilterProcessor;
 
     @Inject
+    S3UploadProcessor s3UploadProcessor;
+
+    @Inject
     KafkaMessageProcessor kafkaMessageProcessor;
 
     @Override
@@ -112,6 +115,7 @@ public class FilePushProcessingRoute extends RouteBuilder {
                         config.s3().secretKey(),
                         config.s3().endpoint()))
                 .log("Read ingest file from s3://${header.CamelAwsS3BucketName}/${header.CamelAwsS3Key}")
+                .log("Customer info -> ${exchangeProperty.customerInfo}")
 
                 // ----- Step 2: Apply transformation (stream -> stream) -----
                 //.setProperty("currentStage", constant("TRANSFORMATION"))
@@ -145,13 +149,7 @@ public class FilePushProcessingRoute extends RouteBuilder {
                     exchange.setProperty("processedS3Key", processedKey);
                     exchange.setProperty("processedS3Bucket", fileInfo.getIngestedS3Key());
                 })
-                // multiPartUpload=true -> uploads the InputStream in parts, no content length needed
-                //.to("aws2-s3://ignored?region=us-east-1&autoCreateBucket=false&multiPartUpload=true&accessKey=7ZTpPkh9ShRuGxa7ShYMHlHEngSZm7lz&secretKey=xBacsX45mlf0N0PIt8g28QTW0t9hQ5-7&trustAllCertificates=true&overrideEndpoint=true&uriEndpointOverride=" + config.s3().endpoint())
-                .to(String.format("aws2-s3://file-push-test-target?region=%s&autoCreateBucket=false&multiPartUpload=true&accessKey=%s&secretKey=%s&trustAllCertificates=true&overrideEndpoint=true&uriEndpointOverride=%s&forcePathStyle=true",
-                        config.s3().region(),
-                        config.s3().accessKey(),
-                        config.s3().secretKey(),
-                        config.s3().endpoint()))
+                .process(s3UploadProcessor)
                 .log("Uploaded processed file to "
                         + "s3://${exchangeProperty.processedS3Bucket}/${exchangeProperty.processedS3Key}")
 

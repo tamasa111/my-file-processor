@@ -11,4 +11,5 @@ public class WLFilterConfig {
 
     private List<String> wlListType;
     private List<String> wlFilterType;
+    private int[] wlIndexes;
 }

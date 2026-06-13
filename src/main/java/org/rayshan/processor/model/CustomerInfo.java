@@ -12,7 +12,6 @@ public class CustomerInfo {
     private String customerId;
     private String customerName;
     private boolean wlFilter;
-    private int[] wlIndexes;
     private WLFilterConfig wlFilterConfig;
     private List<CustomerDestination> customerDestinations;
 }
