@@ -43,11 +43,21 @@ public class WlFilterProcessor implements Processor {
 
         String fieldValue = extractCsvField(record, filterColumn, delimiter, exchange);
 
-        if (fieldValue != null && isInWhitelist(customerInfo, fieldValue)) {
+        boolean inWhitelist = fieldValue != null && isInWhitelist(customerInfo, fieldValue);
+        String filterType = getFilterType(customerInfo);
+        
+        boolean shouldKeep;
+        if ("SELECT_WL_VALUES_ONLY".equals(filterType)) {
+            shouldKeep = inWhitelist;
+        } else {
+            shouldKeep = !inWhitelist;
+        }
+        
+        if (shouldKeep) {
+            exchange.getIn().setBody(record);
+        } else {
             LOG.debug("Record filtered out (in whitelist): {}", fieldValue);
             exchange.getIn().setBody(null);
-        } else {
-            exchange.getIn().setBody(record);
         }
     }
 
@@ -73,9 +83,9 @@ public class WlFilterProcessor implements Processor {
 
     private String getFilterColumn(CustomerInfo customerInfo) {
         if (customerInfo.getWlFilterConfig() != null
-                && customerInfo.getWlFilterConfig().getWlFilterType() != null
-                && !customerInfo.getWlFilterConfig().getWlFilterType().isEmpty()) {
-            return customerInfo.getWlFilterConfig().getWlFilterType().get(0);
+                && customerInfo.getWlFilterConfig().getWlListType() != null
+                && !customerInfo.getWlFilterConfig().getWlListType().isEmpty()) {
+            return customerInfo.getWlFilterConfig().getWlListType().get(0);
         }
         return "id";
     }
@@ -97,6 +107,14 @@ public class WlFilterProcessor implements Processor {
             return null;
         }
         return fields[columnIndex].trim();
+    }
+
+    private String getFilterType(CustomerInfo customerInfo) {
+        if (customerInfo.getWlFilterConfig() != null
+                && customerInfo.getWlFilterConfig().getFilterType() != null) {
+            return customerInfo.getWlFilterConfig().getFilterType();
+        }
+        return "REMOVE_WL_VALUES";
     }
 
     private boolean isInWhitelist(CustomerInfo customerInfo, String fieldValue) {

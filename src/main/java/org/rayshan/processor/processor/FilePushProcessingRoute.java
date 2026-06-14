@@ -142,12 +142,21 @@ public class FilePushProcessingRoute extends RouteBuilder {
                     CustomerInfo customerInfo =
                             exchange.getProperty("customerInfo", CustomerInfo.class);
                     FileInfo fileInfo = ingestedEvent.getFile();
-                    String processedKey =
-                            "processed/" + customerInfo.getCustomerId() + "/" + fileInfo.getFileName();
-                    exchange.getIn().setHeader(AWS2S3Constants.BUCKET_NAME, fileInfo.getIngestedS3Bucket());
-                    exchange.getIn().setHeader(AWS2S3Constants.KEY, processedKey);
-                    exchange.setProperty("processedS3Key", processedKey);
-                    exchange.setProperty("processedS3Bucket", fileInfo.getIngestedS3Key());
+                    
+                    String bucketName = customerInfo.getProcessedS3Bucket();
+                    String objectKey = customerInfo.getProcessedS3Object();
+                    
+                    if (bucketName == null || bucketName.isEmpty()) {
+                        bucketName = fileInfo.getIngestedS3Bucket();
+                    }
+                    if (objectKey == null || objectKey.isEmpty()) {
+                        objectKey = "processed/" + customerInfo.getCustomerId() + "/" + fileInfo.getFileName();
+                    }
+                    
+                    exchange.getIn().setHeader(AWS2S3Constants.BUCKET_NAME, bucketName);
+                    exchange.getIn().setHeader(AWS2S3Constants.KEY, objectKey);
+                    exchange.setProperty("processedS3Key", objectKey);
+                    exchange.setProperty("processedS3Bucket", bucketName);
                 })
                 .process(s3UploadProcessor)
                 .log("Uploaded processed file to "

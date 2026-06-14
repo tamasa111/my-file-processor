@@ -78,15 +78,23 @@ public class CsvStreamFilterProcessor implements Processor {
                 }
 
                 String[] fields = line.split(finalDelimiter, -1);
-                boolean shouldFilter = false;
+                boolean inWhitelist = false;
                 for (int idx : indexesToCheck) {
                     if (idx >= 0 && idx < fields.length) {
                         String fieldValue = fields[idx].trim();
                         if (isInWhitelist(finalCustomerInfo, fieldValue)) {
-                            shouldFilter = true;
+                            inWhitelist = true;
                             break;
                         }
                     }
+                }
+
+                String filterType = getFilterType(finalCustomerInfo);
+                boolean shouldFilter;
+                if ("SELECT_WL_VALUES_ONLY".equals(filterType)) {
+                    shouldFilter = !inWhitelist;
+                } else {
+                    shouldFilter = inWhitelist;
                 }
 
                 if (!shouldFilter) {
@@ -149,11 +157,19 @@ public class CsvStreamFilterProcessor implements Processor {
 
     private String getFilterColumn(CustomerInfo customerInfo) {
         if (customerInfo.getWlFilterConfig() != null
-                && customerInfo.getWlFilterConfig().getWlFilterType() != null
-                && !customerInfo.getWlFilterConfig().getWlFilterType().isEmpty()) {
-            return customerInfo.getWlFilterConfig().getWlFilterType().get(0);
+                && customerInfo.getWlFilterConfig().getWlListType() != null
+                && !customerInfo.getWlFilterConfig().getWlListType().isEmpty()) {
+            return customerInfo.getWlFilterConfig().getWlListType().get(0);
         }
         return "id";
+    }
+
+    private String getFilterType(CustomerInfo customerInfo) {
+        if (customerInfo.getWlFilterConfig() != null
+                && customerInfo.getWlFilterConfig().getFilterType() != null) {
+            return customerInfo.getWlFilterConfig().getFilterType();
+        }
+        return "REMOVE_WL_VALUES";
     }
 
     private boolean isInWhitelist(CustomerInfo customerInfo, String fieldValue) {

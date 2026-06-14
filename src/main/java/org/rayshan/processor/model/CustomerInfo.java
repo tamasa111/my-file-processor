@@ -14,4 +14,6 @@ public class CustomerInfo {
     private boolean wlFilter;
     private WLFilterConfig wlFilterConfig;
     private List<CustomerDestination> customerDestinations;
+    private String processedS3Bucket;
+    private String processedS3Object;
 }

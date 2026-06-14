@@ -10,6 +10,6 @@ import java.util.List;
 public class WLFilterConfig {
 
     private List<String> wlListType;
-    private List<String> wlFilterType;
+    private String filterType;
     private int[] wlIndexes;
 }
